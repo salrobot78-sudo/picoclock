@@ -50,12 +50,43 @@
   .mini { width: auto; padding: 6px 8px; font-size: 13px; border-radius: 8px; background: #1f2a36; color: var(--text); font-weight: 600; }
   .scan-item { padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 6px; display: flex; justify-content: space-between; }
   #err { color: var(--bad); font-size: 14px; margin-top: 8px; }
+  .topbar { position: sticky; top: 0; z-index: 5; background: var(--bg);
+            margin: calc(-1 * (env(safe-area-inset-top) + 16px)) -16px 14px;
+            padding: calc(env(safe-area-inset-top) + 12px) 16px 0; border-bottom: 1px solid var(--line); }
+  .topbar .title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .tabs { display: flex; gap: 4px; overflow-x: auto; }
+  .tabs button { width: auto; flex: 1; background: transparent; color: var(--dim); border-radius: 10px 10px 0 0;
+                 padding: 10px 6px; font-weight: 600; font-size: 15px; white-space: nowrap; border-bottom: 3px solid transparent; }
+  .tabs button.sel { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab { display: none; } .tab.show { display: block; }
+  .field { margin-bottom: 10px; }
+  .field label { display: block; color: var(--dim); font-size: 13px; margin-bottom: 4px; }
+  .field input[type=text], .field textarea, .field select, .field input[type=number] {
+    width: 100%; font: inherit; font-size: 16px; padding: 9px; border-radius: 10px;
+    border: 1px solid var(--line); background: #0e141b; color: var(--text); }
+  .field textarea { min-height: 84px; resize: vertical; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .chk { display: flex; gap: 16px; flex-wrap: wrap; font-size: 15px; }
+  #pv { width: 100%; max-width: 512px; image-rendering: pixelated; border-radius: 8px; border: 1px solid var(--line); display: block; margin: 0 auto; }
+  .pg { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; padding: 10px;
+        border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; }
+  .pg .nm { font-weight: 600; } .pg .meta { color: var(--dim); font-size: 13px; }
+  .pg .acts { display: flex; gap: 4px; }
+  .card { scroll-margin-top: 120px; }
 </style>
 </head>
 <body>
-  <h1>PicoClock 藍牙控制</h1>
-  <div class="sub">在 iPhone 請用 <b>Bluefy</b> 開啟本頁。Pico 需先開啟藍牙（WiFi 失敗時自動，或同時長按 KEY0 + KEY1 3 秒）。</div>
-
+  <div class="topbar">
+    <div class="title"><h1 style="margin:0">PicoClock 藍牙控制</h1><span id="connPill" class="state">未連線</span></div>
+    <div class="tabs" id="tabs">
+      <button data-t="conn" class="sel">連線</button>
+      <button data-t="text">自訂文字</button>
+      <button data-t="jjy">JJY</button>
+      <button data-t="wifi">WiFi</button>
+    </div>
+  </div>
+  <section class="tab show" id="tab-conn">
+  <div class="sub">iPhone 請用 <b>Bluefy</b> 開啟本頁。Pico 需先開啟藍牙（WiFi 失敗時自動，或同時長按 KEY0 + KEY1 3 秒）。</div>
   <div class="card">
     <h2>連線</h2>
     <div style="margin-bottom:10px">
@@ -84,6 +115,64 @@
   </div>
 
   <div class="card">
+    <h2>Pico 狀態</h2>
+    <div class="kv">
+      <div>WiFi</div><div id="wifi">-</div>
+      <div>天氣</div><div id="wx">-</div>
+      <div>藍牙</div><div id="ble">-</div>
+      <div>韌體</div><div id="ver">-</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>紀錄</h2>
+    <pre id="log"></pre>
+  </div>
+
+  </section>
+  <section class="tab" id="tab-text">
+  <div class="card">
+    <h2>手機建立的自訂文字頁（與電腦 APP 的分開管理）</h2>
+    <div id="pgList"></div>
+    <button id="btnNewPage" class="ghost" disabled>＋ 新增文字頁</button>
+  </div>
+
+  <div class="card" id="editor">
+    <h2 id="edTitle">新增文字頁</h2>
+    <canvas id="pv" width="512" height="256"></canvas>
+    <div class="hint" style="text-align:center;margin:6px 0 12px">OLED 實際顯示效果 (128 × 64)</div>
+    <div class="field"><label>頁面名稱</label><input type="text" id="edName" value="手機文字"></div>
+    <div class="field"><label>顯示文字（可多行）</label><textarea id="edText">你好
+Pico Clock</textarea></div>
+    <div class="grid2">
+      <div class="field"><label>字型</label><select id="edFont">
+        <option value="sans">黑體</option><option value="serif">明體</option><option value="mono">等寬</option></select></div>
+      <div class="field"><label>字體大小 (px)</label><input type="number" id="edSize" min="8" max="64" value="18"></div>
+      <div class="field"><label>水平對齊</label><select id="edH">
+        <option value="center">置中</option><option value="left">靠左</option><option value="right">靠右</option></select></div>
+      <div class="field"><label>垂直對齊</label><select id="edV">
+        <option value="center">置中</option><option value="top">靠上</option><option value="bottom">靠下</option></select></div>
+      <div class="field"><label>行距 (px)</label><input type="number" id="edSp" min="-8" max="30" value="2"></div>
+      <div class="field"><label>筆畫粗細 (門檻)</label><input type="number" id="edTh" min="40" max="220" value="110"></div>
+      <div class="field"><label>水平位移</label><input type="number" id="edDx" min="-128" max="128" value="0"></div>
+      <div class="field"><label>垂直位移</label><input type="number" id="edDy" min="-64" max="64" value="0"></div>
+    </div>
+    <div class="field chk">
+      <label><input type="checkbox" id="edBold"> 粗體</label>
+      <label><input type="checkbox" id="edInv"> 反白</label>
+      <label><input type="checkbox" id="edFrame"> 外框</label>
+    </div>
+    <div class="field"><label>輪播秒數</label><input type="number" id="edSecs" min="1" max="3600" value="5"></div>
+    <div class="row">
+      <button id="btnUpload" disabled>上傳並顯示</button>
+      <button id="btnEdCancel" class="ghost">清空</button>
+    </div>
+    <div class="hint">筆畫粗細：數字越小字越粗。小字建議 16px 以上；最多 8 頁 (與電腦 APP 共用名額)。</div>
+  </div>
+
+  </section>
+  <section class="tab" id="tab-jjy">
+  <div class="card">
     <h2>JJY 電波發射</h2>
     <div style="margin-bottom:10px"><span id="txState" class="state">-</span></div>
     <div class="seg" id="freqSeg">
@@ -103,6 +192,8 @@
     <button id="btnShowTx" class="ghost" style="margin-top:10px" disabled>OLED 顯示發射頁</button>
   </div>
 
+  </section>
+  <section class="tab" id="tab-wifi">
   <div class="card">
     <h2>WiFi 設定（依順序連線，最多 5 組）</h2>
     <div id="wifiNow" class="hint" style="margin:0 0 10px">目前連線：-</div>
@@ -119,20 +210,7 @@
     <div class="hint">密碼欄留空且顯示「已設定」= 沿用原本密碼。Pico 只支援 2.4 GHz。</div>
   </div>
 
-  <div class="card">
-    <h2>Pico 狀態</h2>
-    <div class="kv">
-      <div>WiFi</div><div id="wifi">-</div>
-      <div>天氣</div><div id="wx">-</div>
-      <div>藍牙</div><div id="ble">-</div>
-      <div>韌體</div><div id="ver">-</div>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>紀錄</h2>
-    <pre id="log"></pre>
-  </div>
+  </section>
 
 <script>
 "use strict";
@@ -140,8 +218,8 @@
 const SVC = "7a6b0001-5c3e-4a8e-9b1f-1c2d3e4f5a60";
 const RX  = "7a6b0002-5c3e-4a8e-9b1f-1c2d3e4f5a60";
 const TX  = "7a6b0003-5c3e-4a8e-9b1f-1c2d3e4f5a60";
-const C = { STATUS: 1, JJY: 5, SHOW: 6, SYNC_NOW: 10, SET_TIME: 11,
-            WIFI_GET: 12, WIFI_SET: 13, WIFI_SCAN: 14 };
+const C = { STATUS: 1, GET_CFG: 2, SET_CFG: 3, BITMAP: 4, JJY: 5, SHOW: 6, DEL_BM: 7,
+            SYNC_NOW: 10, SET_TIME: 11, WIFI_GET: 12, WIFI_SET: 13, WIFI_SCAN: 14 };
 const REPLY = 0x80, ERR = 0xFF;
 const CHUNK = 16;                       // 每包資料 16 bytes (封包 20 bytes, 任何 MTU 都能送)
 
@@ -208,7 +286,8 @@ function request(cmd, obj, timeout = 4000, makeBody) {
     };
     try {
       const body = makeBody ? makeBody() : (obj ? JSON.stringify(obj) : "");
-      for (const p of packets(cmd, enc.encode(body))) await writePkt(p);
+      const bytes = body instanceof Uint8Array ? body : enc.encode(body);
+      for (const p of packets(cmd, bytes)) await writePkt(p);
     } catch (e) { clearTimeout(timer); waiter = null; reject(e); }
   }));
   queue = job.catch(() => {});
@@ -245,6 +324,7 @@ async function connect() {
     await refresh();            // 先量測寫入延遲
     await syncTime();
     await wifiLoad();
+    await loadCfg();
     pollTimer = setInterval(refresh, 2000);
   } catch (e) {
     log("連線失敗: " + e.message);
@@ -264,10 +344,11 @@ function cleanup() {
 function disconnect() { if (dev && dev.gatt.connected) dev.gatt.disconnect(); else cleanup(); }
 
 function setConn(text, ok) {
-  const s = $("connState");
-  s.textContent = text; s.className = "state" + (ok ? " on" : "");
+  for (const s of [$("connState"), $("connPill")]) {
+    s.textContent = text; s.className = "state" + (ok ? " on" : "");
+  }
   for (const id of ["btnSync", "btnNtp", "btnTxStart", "btnTxStop", "btnShowTx", "btnDisconnect",
-                    "btnNetAdd", "btnScan", "btnWifiSave"])
+                    "btnNetAdd", "btnScan", "btnWifiSave", "btnNewPage", "btnUpload"])
     $(id).disabled = !ok;
   $("btnConnect").disabled = ok;
 }
@@ -419,6 +500,181 @@ async function wifiSave() {
     log(d.current && d.current.connected ? `WiFi 已連上 ${d.current.ssid}` : "所有 WiFi 都連不上");
   } catch (e) { log("WiFi 設定失敗: " + e.message); }
 }
+
+// ---- 分頁 ----
+for (const b of document.querySelectorAll("#tabs button")) b.onclick = () => {
+  for (const x of document.querySelectorAll("#tabs button")) x.classList.toggle("sel", x === b);
+  for (const t of document.querySelectorAll(".tab")) t.classList.toggle("show", t.id === "tab-" + b.dataset.t);
+  window.scrollTo(0, 0);
+};
+
+// ---- 自訂文字頁 (手機建立, origin = "ble") ----
+const W = 128, H = 64;
+const FONTS = {
+  sans: '"PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif',
+  serif: '"Songti TC", "PMingLiU", "Noto Serif TC", serif',
+  mono: 'ui-monospace, Menlo, Consolas, monospace',
+};
+let cfg = null, editSlot = null;
+const num = (id, d) => { const v = parseInt($(id).value, 10); return isNaN(v) ? d : v; };
+
+function getSrc() {
+  return { text: $("edText").value, font: $("edFont").value, size: num("edSize", 18),
+           bold: $("edBold").checked, halign: $("edH").value, valign: $("edV").value,
+           spacing: num("edSp", 2), dx: num("edDx", 0), dy: num("edDy", 0),
+           th: num("edTh", 110), invert: $("edInv").checked, frame: $("edFrame").checked };
+}
+function setSrc(s) {
+  const d = Object.assign(getSrc(), s || {});
+  $("edText").value = d.text; $("edFont").value = FONTS[d.font] ? d.font : "sans";
+  $("edSize").value = d.size; $("edBold").checked = !!d.bold; $("edH").value = d.halign;
+  $("edV").value = d.valign; $("edSp").value = d.spacing; $("edDx").value = d.dx; $("edDy").value = d.dy;
+  $("edTh").value = d.th || 110; $("edInv").checked = !!d.invert; $("edFrame").checked = !!d.frame;
+}
+
+// 文字 -> 128x64 0/1 點陣 (瀏覽器字型畫在 canvas 再二值化)
+function renderBits(s) {
+  const c = document.createElement("canvas"); c.width = W; c.height = H;
+  const x = c.getContext("2d");
+  x.fillStyle = "#000"; x.fillRect(0, 0, W, H);
+  x.fillStyle = "#fff";
+  const size = Math.max(6, Math.min(64, s.size));
+  x.font = `${s.bold ? "bold " : ""}${size}px ${FONTS[s.font] || FONTS.sans}`;
+  x.textBaseline = "alphabetic";
+  const lines = s.text.split("\n");
+  const m = x.measureText("國Ag");
+  const asc = m.fontBoundingBoxAscent || size * 0.88;
+  const desc = m.fontBoundingBoxDescent || size * 0.22;
+  const lh = asc + desc + s.spacing;
+  const total = lh * lines.length - s.spacing;
+  let y = s.valign === "top" ? 0 : s.valign === "bottom" ? H - total : (H - total) / 2;
+  y += s.dy;
+  for (const ln of lines) {
+    const w = x.measureText(ln).width;
+    const lx = s.halign === "left" ? 0 : s.halign === "right" ? W - w : (W - w) / 2;
+    x.fillText(ln, Math.round(lx + s.dx), Math.round(y + asc));
+    y += lh;
+  }
+  const img = x.getImageData(0, 0, W, H).data;
+  const bits = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) bits[i] = img[i * 4] >= s.th ? 1 : 0;
+  if (s.frame) for (let i = 0; i < W; i++) { bits[i] = 1; bits[(H - 1) * W + i] = 1; }
+  if (s.frame) for (let j = 0; j < H; j++) { bits[j * W] = 1; bits[j * W + W - 1] = 1; }
+  if (s.invert) for (let i = 0; i < W * H; i++) bits[i] ^= 1;
+  return bits;
+}
+
+// 0/1 點陣 -> 1024 bytes (MicroPython framebuf.MONO_HMSB: 每列 16 bytes, bit0 = 最左)
+function packBits(bits) {
+  const out = new Uint8Array(W * H / 8);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++)
+    if (bits[y * W + x]) out[y * 16 + (x >> 3)] |= 1 << (x & 7);
+  return out;
+}
+
+function drawPreview() {
+  const bits = renderBits(getSrc());
+  const c = $("pv"), x = c.getContext("2d"), k = c.width / W;
+  x.fillStyle = "#08101a"; x.fillRect(0, 0, c.width, c.height);
+  x.fillStyle = "#78c8ff";
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++)
+    if (bits[j * W + i]) x.fillRect(i * k, j * k, k - 1, k - 1);
+}
+
+function myPages() {
+  return (cfg?.pages || []).map((p, i) => [p, i]).filter(([p]) => p.type === "custom" && p.origin === "ble");
+}
+
+function renderPages() {
+  const box = $("pgList");
+  const list = myPages();
+  box.innerHTML = list.length ? "" : '<div class="hint" style="margin:0 0 10px">還沒有手機建立的文字頁</div>';
+  for (const [p, idx] of list) {
+    const row = document.createElement("div");
+    row.className = "pg";
+    row.innerHTML = `<input type="checkbox" ${p.on ? "checked" : ""} title="顯示">
+      <div><div class="nm">${esc(p.name || "未命名")}</div><div class="meta">${p.secs} 秒 · slot ${p.slot}</div></div>
+      <div class="acts"><button class="mini" data-a="edit">編輯</button>
+      <button class="mini" data-a="show">顯示</button><button class="mini" data-a="del">刪除</button></div>`;
+    row.querySelector("input").onchange = async e => { p.on = e.target.checked; await saveCfg("已更新顯示設定"); };
+    row.querySelectorAll("button").forEach(b => b.onclick = async () => {
+      if (b.dataset.a === "edit") {
+        editSlot = p.slot; $("edName").value = p.name || ""; $("edSecs").value = p.secs;
+        setSrc(p.src); drawPreview(); $("edTitle").textContent = "編輯：" + (p.name || "");
+        $("editor").scrollIntoView({ behavior: "smooth" });
+      } else if (b.dataset.a === "show") {
+        try { await request(C.SHOW, { index: idx }); log("OLED 顯示：" + p.name); } catch (e) { log(e.message); }
+      } else if (b.dataset.a === "del") {
+        if (b.dataset.armed !== "1") {              // 第一次按: 要求再按一次確認
+          b.dataset.armed = "1"; b.textContent = "確定刪除?"; b.style.background = "var(--bad)";
+          setTimeout(() => { b.dataset.armed = ""; b.textContent = "刪除"; b.style.background = ""; }, 3000);
+        } else {
+          try {
+            await request(C.DEL_BM, null, 5000, () => new Uint8Array([p.slot]));
+            cfg.pages.splice(idx, 1);
+            if (editSlot === p.slot) resetEditor();
+            await saveCfg("已刪除：" + p.name);
+          } catch (e) { log("刪除失敗: " + e.message); }
+        }
+      }
+    });
+    box.appendChild(row);
+  }
+}
+
+async function loadCfg() {
+  try { cfg = await request(C.GET_CFG, null, 8000); renderPages(); }
+  catch (e) { log("讀取顯示設定失敗: " + e.message); }
+}
+
+async function saveCfg(msg) {
+  try {
+    const c = Object.assign({}, cfg); delete c.cwa_key_tail;
+    await request(C.SET_CFG, c, 15000);
+    if (msg) log(msg);
+  } catch (e) { log("設定寫入失敗: " + e.message); }
+  renderPages();
+}
+
+function resetEditor() {
+  editSlot = null; $("edTitle").textContent = "新增文字頁";
+}
+
+async function uploadPage() {
+  if (!cfg) await loadCfg();
+  if (!cfg) return;
+  let slot = editSlot;
+  if (slot == null) {
+    const used = new Set(cfg.pages.filter(p => p.type === "custom").map(p => p.slot));
+    slot = [0, 1, 2, 3, 4, 5, 6, 7].find(i => !used.has(i));
+    if (slot === undefined) { log("自訂頁已滿 8 頁 (含電腦 APP 建立的), 請先刪除"); return; }
+  }
+  const s = getSrc();
+  const bm = packBits(renderBits(s));
+  log(`上傳點陣圖 slot ${slot}…`);
+  try {
+    const payload = new Uint8Array(1025); payload[0] = slot; payload.set(bm, 1);
+    await request(C.BITMAP, null, 30000, () => payload);
+    const name = ($("edName").value.trim() || `手機 ${slot}`).slice(0, 40);
+    const secs = Math.max(1, Math.min(3600, num("edSecs", 5)));
+    let p = cfg.pages.find(x => x.type === "custom" && x.slot === slot);
+    if (p) Object.assign(p, { name, secs, src: s, origin: "ble" });
+    else { p = { type: "custom", slot, on: true, secs, name, origin: "ble", src: s }; cfg.pages.push(p); }
+    await saveCfg(`已上傳：${name}`);
+    editSlot = slot; $("edTitle").textContent = "編輯：" + name;
+    const idx = cfg.pages.findIndex(x => x.type === "custom" && x.slot === slot);
+    await request(C.SHOW, { index: idx });
+  } catch (e) { log("上傳失敗: " + e.message); }
+}
+
+for (const id of ["edText", "edFont", "edSize", "edH", "edV", "edSp", "edTh", "edDx", "edDy", "edBold", "edInv", "edFrame"])
+  $(id).addEventListener("input", drawPreview);
+$("btnNewPage").onclick = () => { resetEditor(); $("edName").value = "手機文字"; drawPreview();
+                                  $("editor").scrollIntoView({ behavior: "smooth" }); };
+$("btnEdCancel").onclick = () => { resetEditor(); $("edText").value = ""; drawPreview(); };
+$("btnUpload").onclick = uploadPage;
+drawPreview();
+if (document.fonts) document.fonts.ready.then(drawPreview);
 
 // ---- 事件 ----
 $("btnNetAdd").onclick = () => addNet("");
