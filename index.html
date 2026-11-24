@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PicoClock 藍牙控制</title>
+<style>
+  :root {
+    --bg: #0b0f14; --card: #141b23; --line: #233040; --text: #e6edf3; --dim: #8b9bab;
+    --accent: #78c8ff; --ok: #4ade80; --warn: #fbbf24; --bad: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.5 -apple-system, "PingFang TC", "Noto Sans TC", sans-serif;
+    padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 24px);
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--dim); font-size: 13px; margin-bottom: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+          padding: 14px 16px; margin-bottom: 14px; }
+  .card h2 { font-size: 14px; color: var(--dim); margin: 0 0 10px; font-weight: 600; letter-spacing: .5px; }
+  button {
+    font: inherit; border: 0; border-radius: 12px; padding: 12px 14px; color: #06121c;
+    background: var(--accent); font-weight: 700; width: 100%; cursor: pointer;
+  }
+  button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  button.danger { background: var(--bad); color: #1a0606; }
+  button:disabled { opacity: .4; }
+  .row { display: flex; gap: 10px; }
+  .row > * { flex: 1; }
+  .kv { display: grid; grid-template-columns: 88px 1fr; gap: 6px 10px; font-size: 15px; }
+  .kv div:nth-child(odd) { color: var(--dim); }
+  .big { font: 700 34px/1.1 ui-monospace, "SF Mono", Menlo, monospace; color: var(--accent); }
+  .state { display: inline-block; padding: 2px 10px; border-radius: 99px; font-size: 13px;
+           background: #1f2a36; color: var(--dim); }
+  .state.on { background: #0f2e1c; color: var(--ok); }
+  .state.tx { background: #33240a; color: var(--warn); }
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin-bottom: 10px; }
+  .seg button { border-radius: 0; background: transparent; color: var(--dim); font-weight: 600; }
+  .seg button.sel { background: var(--accent); color: #06121c; }
+  #log { font: 12px/1.4 ui-monospace, Menlo, monospace; color: var(--dim); white-space: pre-wrap;
+         max-height: 140px; overflow: auto; margin: 0; }
+  .hint { color: var(--dim); font-size: 13px; margin-top: 8px; }
+  .hidden { display: none; }
+  .net { display: grid; grid-template-columns: 22px 1fr 1fr auto; gap: 6px; align-items: center; margin-bottom: 8px; }
+  .net input { width: 100%; font: inherit; font-size: 15px; padding: 8px; border-radius: 8px;
+               border: 1px solid var(--line); background: #0e141b; color: var(--text); }
+  .net .no { color: var(--dim); font-size: 13px; text-align: center; }
+  .mini { width: auto; padding: 6px 8px; font-size: 13px; border-radius: 8px; background: #1f2a36; color: var(--text); font-weight: 600; }
+  .scan-item { padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 6px; display: flex; justify-content: space-between; }
+  #err { color: var(--bad); font-size: 14px; margin-top: 8px; }
+</style>
+</head>
+<body>
+  <h1>PicoClock 藍牙控制</h1>
+  <div class="sub">在 iPhone 請用 <b>Bluefy</b> 開啟本頁。Pico 需先開啟藍牙（WiFi 失敗時自動，或同時長按 KEY0 + KEY1 3 秒）。</div>
+
+  <div class="card">
+    <h2>連線</h2>
+    <div style="margin-bottom:10px">
+      <span id="connState" class="state">未連線</span>
+      <span id="devName" style="color:var(--dim);font-size:13px;margin-left:6px"></span>
+    </div>
+    <div class="row">
+      <button id="btnConnect">連線並對時</button>
+      <button id="btnDisconnect" class="ghost" disabled>中斷</button>
+    </div>
+    <div id="err"></div>
+  </div>
+
+  <div class="card">
+    <h2>時間</h2>
+    <div class="big" id="picoTime">--:--:--</div>
+    <div class="kv" style="margin-top:10px">
+      <div>Pico 日期</div><div id="picoDate">-</div>
+      <div>與手機差</div><div id="diff">-</div>
+      <div>校時狀態</div><div id="sync">-</div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button id="btnSync" disabled>用手機時間對時</button>
+      <button id="btnNtp" class="ghost" disabled>Pico 連 WiFi 校時</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>JJY 電波發射</h2>
+    <div style="margin-bottom:10px"><span id="txState" class="state">-</span></div>
+    <div class="seg" id="freqSeg">
+      <button data-f="40000">40 kHz（33nF）</button>
+      <button data-f="60000">60 kHz（15nF）</button>
+    </div>
+    <div class="kv" style="margin-bottom:12px">
+      <div>剩餘時間</div><div id="txRemain">-</div>
+      <div>編碼時間</div><div id="txCode">-</div>
+      <div>秒 / 位元</div><div id="txBit">-</div>
+      <div>下次排程</div><div id="sched">-</div>
+    </div>
+    <div class="row">
+      <button id="btnTxStart" disabled>開始發射</button>
+      <button id="btnTxStop" class="danger" disabled>停止</button>
+    </div>
+    <button id="btnShowTx" class="ghost" style="margin-top:10px" disabled>OLED 顯示發射頁</button>
+  </div>
+
+  <div class="card">
+    <h2>WiFi 設定（依順序連線，最多 5 組）</h2>
+    <div id="wifiNow" class="hint" style="margin:0 0 10px">目前連線：-</div>
+    <div id="netList"></div>
+    <div class="row" style="margin-bottom:10px">
+      <button id="btnNetAdd" class="ghost" disabled>＋ 新增一組</button>
+      <button id="btnScan" class="ghost" disabled>掃描附近 WiFi</button>
+    </div>
+    <div id="scanList"></div>
+    <label class="hint" style="display:block;margin:6px 0 10px">
+      <input type="checkbox" id="ckFallback" checked> 全部失敗時再試內建 WiFi（備援）<span id="backupName"></span>
+    </label>
+    <button id="btnWifiSave" disabled>儲存並重新連線</button>
+    <div class="hint">密碼欄留空且顯示「已設定」= 沿用原本密碼。Pico 只支援 2.4 GHz。</div>
+  </div>
+
+  <div class="card">
+    <h2>Pico 狀態</h2>
+    <div class="kv">
+      <div>WiFi</div><div id="wifi">-</div>
+      <div>天氣</div><div id="wx">-</div>
+      <div>藍牙</div><div id="ble">-</div>
+      <div>韌體</div><div id="ver">-</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>紀錄</h2>
+    <pre id="log"></pre>
+  </div>
+
+<script>
+"use strict";
+// ---- 與 Pico 相同的協定 (protocol.py) ----
+const SVC = "7a6b0001-5c3e-4a8e-9b1f-1c2d3e4f5a60";
+const RX  = "7a6b0002-5c3e-4a8e-9b1f-1c2d3e4f5a60";
+const TX  = "7a6b0003-5c3e-4a8e-9b1f-1c2d3e4f5a60";
+const C = { STATUS: 1, JJY: 5, SHOW: 6, SYNC_NOW: 10, SET_TIME: 11,
+            WIFI_GET: 12, WIFI_SET: 13, WIFI_SCAN: 14 };
+const REPLY = 0x80, ERR = 0xFF;
+const CHUNK = 16;                       // 每包資料 16 bytes (封包 20 bytes, 任何 MTU 都能送)
+
+const $ = id => document.getElementById(id);
+const enc = new TextEncoder(), dec = new TextDecoder();
+let dev = null, rxChar = null, txChar = null, pollTimer = null;
+let asm = null, waiter = null, queue = Promise.resolve();
+let writeMs = 30;                       // 每次寫入的平均耗時 (動態量測, 用來補償對時延遲)
+
+function log(s) {
+  const t = new Date().toTimeString().slice(0, 8);
+  const el = $("log");
+  el.textContent = `${t} ${s}\n` + el.textContent.slice(0, 3000);
+}
+
+function packets(cmd, bytes) {
+  const total = Math.max(1, Math.ceil(bytes.length / CHUNK));
+  const out = [];
+  for (let i = 0; i < total; i++) {
+    const chunk = bytes.slice(i * CHUNK, (i + 1) * CHUNK);
+    const p = new Uint8Array(4 + chunk.length);
+    p[0] = cmd; p[1] = i; p[2] = total; p[3] = chunk.length;
+    p.set(chunk, 4);
+    out.push(p);
+  }
+  return out;
+}
+
+class Assembler {
+  constructor() { this.buf = null; this.cmd = 0; this.next = 0; }
+  feed(p) {
+    if (p.length < 4) return null;
+    const [cmd, idx, total, n] = p;
+    if (n > 244 || n > p.length - 4 || total === 0 || idx >= total) { this.buf = null; return null; }
+    if (idx === 0) { this.buf = []; this.cmd = cmd; }
+    else if (!this.buf || cmd !== this.cmd || idx !== this.next) { this.buf = null; return null; }
+    this.buf.push(...p.slice(4, 4 + n));
+    this.next = idx + 1;
+    if (idx === total - 1) { const d = new Uint8Array(this.buf); this.buf = null; return [cmd, d]; }
+    return null;
+  }
+}
+
+async function writePkt(p) {
+  const t0 = performance.now();
+  if (rxChar.writeValueWithResponse) await rxChar.writeValueWithResponse(p);
+  else await rxChar.writeValue(p);
+  const dt = performance.now() - t0;
+  writeMs = writeMs * 0.7 + dt * 0.3;
+}
+
+// 指令依序執行 (一次一個)
+function request(cmd, obj, timeout = 4000, makeBody) {
+  const job = queue.then(() => new Promise(async (resolve, reject) => {
+    if (!rxChar) return reject(new Error("尚未連線"));
+    asm = new Assembler();
+    const timer = setTimeout(() => { waiter = null; reject(new Error("Pico 沒有回應")); }, timeout);
+    waiter = (rc, data) => {
+      clearTimeout(timer); waiter = null;
+      let j = {};
+      try { j = data.length ? JSON.parse(dec.decode(data)) : {}; } catch (e) {}
+      if (rc === ERR) reject(new Error(j.error || "Pico 錯誤"));
+      else if (rc === (cmd | REPLY)) resolve(j);
+    };
+    try {
+      const body = makeBody ? makeBody() : (obj ? JSON.stringify(obj) : "");
+      for (const p of packets(cmd, enc.encode(body))) await writePkt(p);
+    } catch (e) { clearTimeout(timer); waiter = null; reject(e); }
+  }));
+  queue = job.catch(() => {});
+  return job;
+}
+
+function onNotify(ev) {
+  const v = ev.target.value;
+  const p = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+  const m = asm && asm.feed(p);
+  if (m && waiter) waiter(m[0], m[1]);
+}
+
+// ---- 連線 ----
+async function connect() {
+  $("err").textContent = "";
+  if (!navigator.bluetooth) {
+    $("err").textContent = "此瀏覽器不支援 Web Bluetooth。iPhone 請用 Bluefy 開啟本頁。";
+    return;
+  }
+  try {
+    dev = await navigator.bluetooth.requestDevice({ filters: [{ services: [SVC] }], optionalServices: [SVC] });
+    dev.addEventListener("gattserverdisconnected", onDisconnected);
+    setConn("連線中…", false);
+    const server = await dev.gatt.connect();
+    const svc = await server.getPrimaryService(SVC);
+    rxChar = await svc.getCharacteristic(RX);
+    txChar = await svc.getCharacteristic(TX);
+    await txChar.startNotifications();
+    txChar.addEventListener("characteristicvaluechanged", onNotify);
+    setConn("已連線", true);
+    $("devName").textContent = dev.name || "PicoClock";
+    log("已連線 " + (dev.name || ""));
+    await refresh();            // 先量測寫入延遲
+    await syncTime();
+    await wifiLoad();
+    pollTimer = setInterval(refresh, 2000);
+  } catch (e) {
+    log("連線失敗: " + e.message);
+    $("err").textContent = "連線失敗：" + e.message;
+    cleanup();
+  }
+}
+
+function onDisconnected() { log("已中斷連線"); cleanup(); }
+
+function cleanup() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = null; rxChar = txChar = null; waiter = null; queue = Promise.resolve();
+  setConn("未連線", false);
+}
+
+function disconnect() { if (dev && dev.gatt.connected) dev.gatt.disconnect(); else cleanup(); }
+
+function setConn(text, ok) {
+  const s = $("connState");
+  s.textContent = text; s.className = "state" + (ok ? " on" : "");
+  for (const id of ["btnSync", "btnNtp", "btnTxStart", "btnTxStop", "btnShowTx", "btnDisconnect",
+                    "btnNetAdd", "btnScan", "btnWifiSave"])
+    $(id).disabled = !ok;
+  $("btnConnect").disabled = ok;
+}
+
+// ---- 對時: 送出時預先加上傳輸延遲 ----
+async function syncTime() {
+  try {
+    const s = await request(C.SET_TIME, null, 6000, () => {
+      const body = JSON.stringify({ utc_ms: 0, tz_min: -new Date().getTimezoneOffset() });
+      const nPk = Math.ceil(enc.encode(body).length / CHUNK);
+      return JSON.stringify({ utc_ms: Math.round(Date.now() + nPk * writeMs),
+                              tz_min: -new Date().getTimezoneOffset() });
+    });
+    log(`已用手機時間對時 (延遲補償 ${Math.round(writeMs)} ms/包)`);
+    show(s);
+  } catch (e) { log("對時失敗: " + e.message); }
+}
+
+async function refresh() {
+  try { show(await request(C.STATUS)); } catch (e) { log("狀態讀取失敗: " + e.message); }
+}
+
+async function jjy(action) {
+  try {
+    const f = Number(document.querySelector("#freqSeg .sel")?.dataset.f || 40000);
+    show(await request(C.JJY, action ? { action, freq: f } : { freq: f }, action === "start" ? 30000 : 4000));
+    if (action) log(action === "start" ? "開始發射 JJY" : "停止發射");
+  } catch (e) { log("JJY 失敗: " + e.message); }
+}
+
+// ---- 顯示 ----
+function show(s) {
+  if (!s || !s.time) return;
+  const [d, t] = s.time.split(" ");
+  $("picoTime").textContent = t;
+  $("picoDate").textContent = `${d} ${s.week || ""}`;
+  const pico = new Date(s.time.replace(" ", "T") + "+08:00").getTime();
+  const diff = (pico - Date.now()) / 1000;
+  $("diff").textContent = Math.abs(diff) < 1.5 ? "±1 秒內 ✓" : `${diff > 0 ? "+" : ""}${diff.toFixed(0)} 秒`;
+  $("sync").textContent = s.sync || "-";
+  const idx = s.wifi_idx === "備援" ? "備援 " : (s.wifi_idx ? `第${s.wifi_idx}組 ` : "");
+  $("wifi").textContent = s.wifi ? `${idx}${s.wifi_ssid || ""} ${s.ip}${s.rssi != null ? `（${s.rssi} dBm）` : ""}` : "未連線";
+  $("wx").textContent = s.wx_upd ? `${s.wx_loc || ""} ${s.wx_desc || ""}（${s.wx_upd}）` : "尚無資料";
+  $("ble").textContent = s.ble ? `${s.ble.state}　MTU ${s.ble.mtu}` : "-";
+  $("ver").textContent = "v" + (s.ver || "?");
+  $("sched").textContent = s.sched_next || "未啟用";
+  const j = s.jjy || {};
+  const st = $("txState");
+  if (j.active) {
+    st.textContent = `📡 發射中 ${j.freq / 1000} kHz${j.sched ? "（排程）" : ""}`; st.className = "state tx";
+    const r = j.remain || 0;
+    $("txRemain").textContent = `${String(Math.floor(r / 60)).padStart(2, "0")}:${String(r % 60).padStart(2, "0")}`;
+    $("txCode").textContent = `${j.code || "-"}（UTC+${j.tz ?? 8}）`;
+    $("txBit").textContent = `${j.sec ?? "-"} 秒　位元 ${j.bit ?? "-"}`;
+  } else {
+    st.textContent = "待機"; st.className = "state";
+    $("txRemain").textContent = $("txCode").textContent = $("txBit").textContent = "-";
+  }
+  if (j.freq) for (const b of document.querySelectorAll("#freqSeg button"))
+    b.classList.toggle("sel", Number(b.dataset.f) === j.freq);
+}
+
+// ---- WiFi 設定 ----
+let nets = [];          // [{ssid, pwd, has}]
+function esc(t) { return String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+function renderNets() {
+  const box = $("netList");
+  box.innerHTML = nets.length ? "" : '<div class="hint" style="margin:0 0 8px">尚未設定（會使用內建 WiFi）</div>';
+  nets.forEach((n, i) => {
+    const row = document.createElement("div");
+    row.className = "net";
+    row.innerHTML = `<div class="no">${i + 1}</div>
+      <input placeholder="WiFi 名稱" value="${esc(n.ssid)}">
+      <input type="password" placeholder="${n.has ? "已設定" : "密碼"}" value="${esc(n.pwd)}">
+      <div style="display:flex;gap:4px">
+        <button class="mini" data-a="up">▲</button><button class="mini" data-a="dn">▼</button>
+        <button class="mini" data-a="del">✕</button></div>`;
+    const [ssidIn, pwdIn] = row.querySelectorAll("input");
+    ssidIn.oninput = () => { n.ssid = ssidIn.value; };
+    pwdIn.oninput = () => { n.pwd = pwdIn.value; };
+    row.querySelectorAll("button").forEach(b => b.onclick = () => {
+      const a = b.dataset.a;
+      if (a === "del") nets.splice(i, 1);
+      if (a === "up" && i > 0) [nets[i - 1], nets[i]] = [nets[i], nets[i - 1]];
+      if (a === "dn" && i < nets.length - 1) [nets[i + 1], nets[i]] = [nets[i], nets[i + 1]];
+      renderNets();
+    });
+    box.appendChild(row);
+  });
+  $("btnNetAdd").disabled = !rxChar || nets.length >= 5;
+}
+
+function showWifi(d) {
+  if (!d) return;
+  nets = (d.nets || []).map(n => ({ ssid: n.ssid, pwd: "", has: !!n.has_pwd }));
+  $("ckFallback").checked = d.fallback !== false;
+  if (d.backup) $("backupName").textContent = d.backup.length ? `：${d.backup.join("、")}` : "";
+  const c = d.current || {};
+  const lb = c.label === "備援" ? "備援 " : (c.label ? `第${c.label}組 ` : "");
+  $("wifiNow").textContent = c.connected ? `目前連線：${lb}${c.ssid} ${c.ip}` : "目前連線：未連線";
+  renderNets();
+}
+
+async function wifiLoad() {
+  try { showWifi(await request(C.WIFI_GET)); } catch (e) { log("讀取 WiFi 設定失敗: " + e.message); }
+}
+
+function addNet(ssid) {
+  if (nets.length >= 5) { log("最多 5 組 WiFi"); return; }
+  if (ssid && nets.some(n => n.ssid === ssid)) { log(`「${ssid}」已在清單中`); return; }
+  nets.push({ ssid: ssid || "", pwd: "", has: false });
+  renderNets();
+  const inputs = $("netList").querySelectorAll(".net:last-child input");
+  (ssid ? inputs[1] : inputs[0])?.focus();
+}
+
+async function wifiScan() {
+  $("scanList").innerHTML = '<div class="hint">掃描中…</div>';
+  try {
+    const d = await request(C.WIFI_SCAN, null, 15000);
+    const box = $("scanList");
+    box.innerHTML = "";
+    for (const n of d.nets || []) {
+      const it = document.createElement("div");
+      it.className = "scan-item";
+      it.innerHTML = `<span>${n.secure ? "🔒 " : ""}${esc(n.ssid)}</span><span style="color:var(--dim)">${n.rssi} dBm ＋</span>`;
+      it.onclick = () => { addNet(n.ssid); box.innerHTML = ""; };
+      box.appendChild(it);
+    }
+    if (!(d.nets || []).length) box.innerHTML = '<div class="hint">沒有找到 WiFi</div>';
+  } catch (e) { $("scanList").innerHTML = ""; log("掃描失敗: " + e.message); }
+}
+
+async function wifiSave() {
+  const cfg = {
+    nets: nets.filter(n => n.ssid.trim()).map(n => {
+      const o = { ssid: n.ssid.trim() };
+      if (n.pwd || !n.has) o.pwd = n.pwd;      // 留空且已設定 = 沿用原密碼
+      return o;
+    }),
+    fallback: $("ckFallback").checked,
+    reconnect: true,
+  };
+  log("儲存 WiFi 設定並重新連線（可能需要 1 分鐘）…");
+  try {
+    const d = await request(C.WIFI_SET, cfg, 200000);
+    showWifi(d);
+    log(d.current && d.current.connected ? `WiFi 已連上 ${d.current.ssid}` : "所有 WiFi 都連不上");
+  } catch (e) { log("WiFi 設定失敗: " + e.message); }
+}
+
+// ---- 事件 ----
+$("btnNetAdd").onclick = () => addNet("");
+$("btnScan").onclick = wifiScan;
+$("btnWifiSave").onclick = wifiSave;
+$("btnConnect").onclick = connect;
+$("btnDisconnect").onclick = disconnect;
+$("btnSync").onclick = syncTime;
+$("btnNtp").onclick = async () => {
+  log("Pico 嘗試 WiFi 校時…");
+  try { show(await request(C.SYNC_NOW, null, 40000)); log("WiFi 校時完成"); }
+  catch (e) { log("WiFi 校時失敗: " + e.message); }
+};
+$("btnTxStart").onclick = () => jjy("start");
+$("btnTxStop").onclick = () => jjy("stop");
+$("btnShowTx").onclick = async () => { try { await request(C.SHOW, { tx: true }); } catch (e) { log(e.message); } };
+for (const b of document.querySelectorAll("#freqSeg button"))
+  b.onclick = () => {
+    for (const x of document.querySelectorAll("#freqSeg button")) x.classList.toggle("sel", x === b);
+    if (rxChar) jjy(null);
+  };
+document.querySelector('#freqSeg button[data-f="40000"]').classList.add("sel");
+if (!navigator.bluetooth) $("err").textContent = "此瀏覽器不支援 Web Bluetooth。iPhone 請用 Bluefy 開啟本頁。";
+</script>
+</body>
+</html>
